@@ -1,0 +1,88 @@
+trigger:
+  - main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  - group: SonarCloudVariables  # This group should contain SONAR_TOKEN
+  - name: TERRAFORM_WORKING_DIR
+    value: $(System.DefaultWorkingDirectory)/terraform
+  - name: SONAR_ORGANIZATION
+    value: 'your-sonarcloud-org-name'  # Replace with your actual SonarCloud organization name
+  - name: SONAR_PROJECT_KEY
+    value: 'your-project-key'  # Replace with your desired project key
+  - name: SONAR_PROJECT_NAME
+    value: 'Your Project Name'  # Replace with your desired project name
+
+steps:
+- task: TerraformInstaller@0
+  inputs:
+    terraformVersion: '1.0.0'
+  displayName: 'Install Terraform'
+
+- script: |
+    terraform version
+    which terraform
+  displayName: 'Verify Terraform Installation'
+
+- task: SonarCloudPrepare@1
+  inputs:
+    SonarCloud: 'SonarCloudConnection'
+    organization: '$(SONAR_ORGANIZATION)'
+    scannerMode: 'CLI'
+    configMode: 'manual'
+    cliProjectKey: '$(SONAR_PROJECT_KEY)'
+    cliProjectName: '$(SONAR_PROJECT_NAME)'
+    extraProperties: |
+      sonar.sources=$(TERRAFORM_WORKING_DIR)
+      sonar.exclusions=**/*.tfstate,**/.terraform/**
+      sonar.terraform.file.suffixes=.tf
+      sonar.terraform.terraform-version=1.0
+  displayName: 'Prepare SonarCloud Analysis'
+
+- script: |
+    cd $(TERRAFORM_WORKING_DIR)
+    terraform init
+    terraform validate
+  displayName: 'Initialize and Validate Terraform'
+
+- task: SonarCloudAnalyze@1
+  displayName: 'Run SonarCloud Analysis'
+
+- task: SonarCloudPublish@1
+  inputs:
+    pollingTimeoutSec: '300'
+  displayName: 'Publish SonarCloud Results'
+
+- task: PowerShell@2
+  inputs:
+    targetType: 'inline'
+    script: |
+      $projectKey = "$(SONAR_PROJECT_KEY)"
+      $url = "https://sonarcloud.io/api/qualitygates/project_status?projectKey=$projectKey"
+      $result = Invoke-RestMethod -Uri $url -Headers @{Authorization = "Bearer $(SONAR_TOKEN)"} -Method Get
+      if ($result.projectStatus.status -eq "ERROR") {
+        Write-Host "##vso[task.logissue type=error]Quality Gate failed"
+        exit 1
+      } else {
+        Write-Host "Quality Gate passed"
+      }
+  displayName: 'Check SonarCloud Quality Gate'
+
+- task: TerraformTaskV3@3
+  inputs:
+    provider: 'azurerm'
+    command: 'plan'
+    workingDirectory: '$(TERRAFORM_WORKING_DIR)'
+    environmentServiceNameAzureRM: 'AzureRMConnection'
+  displayName: 'Terraform Plan'
+
+- task: TerraformTaskV3@3
+  condition: succeeded()
+  inputs:
+    provider: 'azurerm'
+    command: 'apply'
+    workingDirectory: '$(TERRAFORM_WORKING_DIR)'
+    environmentServiceNameAzureRM: 'AzureRMConnection'
+  displayName: 'Terraform Apply'
