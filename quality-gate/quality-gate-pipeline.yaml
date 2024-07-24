@@ -1,0 +1,88 @@
+#Pipline configured for SonarCloud
+trigger:
+  - main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  - group: SonarCloudVariables  # This group should contain SONAR_TOKEN and SONAR_ORGANIZATION
+  - name: TERRAFORM_WORKING_DIR
+    value: $(System.DefaultWorkingDirectory)/SonarQube-Terraform/quality-gate
+
+steps:
+- task: TerraformInstaller@0
+  inputs:
+    terraformVersion: '1.0.0'
+  displayName: 'Install Terraform'
+
+- script: |
+    terraform version
+    which terraform
+  displayName: 'Verify Terraform Installation'
+
+- script: |
+    cd $(TERRAFORM_WORKING_DIR)
+    terraform init
+    terraform validate
+  displayName: 'Validate Terraform Configuration'
+
+- task: PowerShell@2
+  inputs:
+    targetType: 'inline'
+    script: |
+      $projectName = "Naa-Terraform"
+      $projectKey = "Infrastructure_$projectName"
+      Write-Host "Generated Project Key: $projectKey"
+      Write-Host "##vso[task.setvariable variable=sonarProjectKey]$projectKey"
+      Write-Host "##vso[task.setvariable variable=sonarProjectName]$projectName"
+  displayName: 'Generate SonarCloud Project Key'
+
+
+- task: SonarCloudPrepare@1
+  inputs:
+    SonarCloud: 'SonarCloudConnection'
+    organization: '$(SONAR_ORGANIZATION)'
+    scannerMode: 'CLI'
+    configMode: 'manual'
+    cliProjectKey: '$(sonarProjectKey)'
+    cliProjectName: '$(sonarProjectName)'
+    extraProperties: |
+      sonar.sources=.
+      sonar.exclusions=**/*.tfstate,**/.terraform/**
+      sonar.terraform.file.suffixes=.tf
+      sonar.terraform.terraform-version=1.0
+      sonar.language=terraform
+  displayName: 'Prepare SonarCloud Analysis'
+
+
+- task: SonarCloudAnalyze@1
+  displayName: 'Run SonarCloud Analysis'
+
+- task: SonarCloudPublish@1
+  inputs:
+    pollingTimeoutSec: '300'
+  displayName: 'Publish SonarCloud Results'
+
+- task: PowerShell@2
+  inputs:
+    targetType: 'inline'
+    script: |
+      $token = "$(SONAR_TOKEN)"
+      $url = "https://sonarcloud.io/api/qualitygates/project_status?projectKey=$(sonarProjectKey)"
+      $base64AuthInfo = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes($token + ":"))
+      $result = Invoke-RestMethod -Headers @{Authorization=("Basic " + $base64AuthInfo)} -Uri $url -Method Get
+      if ($result.projectStatus.status -eq "ERROR") {
+        Write-Host "##vso[task.logissue type=error]Quality Gate failed"
+        exit 1
+      } else {
+        Write-Host "Quality Gate passed"
+      }
+  displayName: 'Check SonarCloud Quality Gate'
+  env:
+    SONAR_TOKEN: $(SONAR_TOKEN)
+
+    provider: 'azurerm'
+    command: 'apply'
+    workingDirectory: '$(TERRAFORM_WORKING_DIR)/SonarQube-Terraform/quality-gate'
+    environmentServiceNameAzureRM: 'MyAzureConnection'
