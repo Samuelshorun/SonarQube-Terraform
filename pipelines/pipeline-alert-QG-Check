@@ -9,11 +9,11 @@ variables:
   - name: TERRAFORM_WORKING_DIR
     value: $(System.DefaultWorkingDirectory)/terraform
   - name: SONAR_ORGANIZATION
-    value: 'your-sonarcloud-org-name'  # Replace with your actual SonarCloud organization name
+    value: 'Runtech Global'  # Replace with your actual SonarCloud organization name
   - name: SONAR_PROJECT_KEY
-    value: 'your-project-key'  # Replace with your desired project key
+    value: 'infrastructure_QG_check'  # Replace with your desired project key
   - name: SONAR_PROJECT_NAME
-    value: 'Your Project Name'  # Replace with your desired project name
+    value: 'QG_check'  # Replace with your desired project name
 
 steps:
 - task: TerraformInstaller@0
@@ -42,7 +42,7 @@ steps:
   displayName: 'Prepare SonarCloud Analysis'
 
 - script: |
-    cd $(TERRAFORM_WORKING_DIR)
+    cd $(TERRAFORM_WORKING_DIR)/SonarQube-Terraform/pipelines
     terraform init
     terraform validate
   displayName: 'Initialize and Validate Terraform'
@@ -74,7 +74,7 @@ steps:
   inputs:
     provider: 'azurerm'
     command: 'plan'
-    workingDirectory: '$(TERRAFORM_WORKING_DIR)'
+    workingDirectory: '$(TERRAFORM_WORKING_DIR)/SonarQube-Terraform/pipelines'
     environmentServiceNameAzureRM: 'AzureRMConnection'
   displayName: 'Terraform Plan'
 
@@ -83,6 +83,6 @@ steps:
   inputs:
     provider: 'azurerm'
     command: 'apply'
-    workingDirectory: '$(TERRAFORM_WORKING_DIR)'
+    workingDirectory: '$(TERRAFORM_WORKING_DIR)/SonarQube-Terraform/pipelines'
     environmentServiceNameAzureRM: 'AzureRMConnection'
   displayName: 'Terraform Apply'

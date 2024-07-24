@@ -22,7 +22,7 @@ steps:
   displayName: 'Verify Terraform Installation'
 
 - script: |
-    cd $(TERRAFORM_WORKING_DIR)
+    cd $(TERRAFORM_WORKING_DIR)/SonarQube-Terraform/quality-gate
     terraform init
     terraform validate
   displayName: 'Validate Terraform Configuration'
